@@ -39,6 +39,7 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get("Authorization")!;
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+    // Verify user
     const token = authHeader.replace("Bearer ", "");
     const { data: { user }, error: authError } = await createClient(
       SUPABASE_URL,
@@ -52,6 +53,7 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Check usage limit
     const { data: profile } = await supabase
       .from("profiles")
       .select("plan, analyses_count")
@@ -60,7 +62,7 @@ Deno.serve(async (req) => {
 
     if (profile?.plan !== "pro" && (profile?.analyses_count ?? 0) >= 2) {
       return new Response(
-        JSON.stringify({ error: "Free analysis limit reached. Please upgrade to Pro.", code: "LIMIT_REACHED" }),
+        JSON.stringify({ error: "Free analysis limit reached. Please upgrade to Pro." }),
         {
           status: 403,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -69,39 +71,17 @@ Deno.serve(async (req) => {
     }
 
     const { jobDescription, cvText } = await req.json();
+
     const userPrompt = `JOB DESCRIPTION:\n${jobDescription}\n\nCV:\n${cvText}`;
 
+    // Run all 4 AI calls in parallel
     const [matchRaw, rewrittenCv, coverLetter, interviewRaw] = await Promise.all([
       callClaude(
-        `You are an expert recruiter and career coach. Analyse the CV against the job listing. Return a JSON object with these exact fields:
-- score: number 0-100
-- positives: array of 3-5 strings describing strengths
-- gaps: array of 3-5 strings describing gaps
-- gap_fixes: array of strings, one per gap, explaining how to fix each gap
-- improvements: array of 3 specific action strings to improve the match
-- jobTitle: the job title from the listing
-- companyName: the company name from the listing
-Be brutally honest and specific. Return ONLY valid JSON, no markdown code fences.`,
+        "You are an expert recruiter and career coach. Analyse the CV against the job listing. Return a JSON object with: score (0-100), positives (array of 3 strengths), gaps (array of 3 weaknesses), improvements (array of 3 specific actions to improve the match). Be brutally honest and specific. Return ONLY valid JSON, no markdown.",
         userPrompt
       ),
       callClaude(
-        `You are an expert CV writer. Rewrite the provided CV to be perfectly tailored for this specific job listing.
-
-Format with these exact section headers on their own lines:
-PROFESSIONAL SUMMARY
-WORK EXPERIENCE
-EDUCATION
-SKILLS
-
-Under WORK EXPERIENCE, format each role as:
-Company Name | Role Title | Mon YYYY – Mon YYYY
-• Achievement bullet point
-
-Use proper date formatting like "Jan 2022 – Mar 2024".
-Properly capitalise all company names and job titles.
-Naturally incorporate keywords from the job listing.
-Keep it truthful — enhance presentation only, never invent experience.
-Return only the rewritten CV text, no commentary.`,
+        "You are an expert CV writer. Rewrite the provided CV to be perfectly tailored for this specific job listing. Naturally incorporate keywords from the job listing. Keep it truthful — enhance presentation only, never invent experience. Format it cleanly. Return only the rewritten CV text.",
         userPrompt
       ),
       callClaude(
@@ -109,38 +89,33 @@ Return only the rewritten CV text, no commentary.`,
         userPrompt
       ),
       callClaude(
-        'You are an expert interview coach. Generate exactly 10 interview questions for this specific role and company. For each question provide: the question itself, and a 2-3 sentence suggested answer structure. Return ONLY a JSON array of 10 objects with "question" and "answer_structure" fields. No markdown code fences.',
+        'You are an expert interview coach. Generate the 10 most likely interview questions for this specific role and company. For each question provide: the question itself, and a 2-3 sentence suggested answer structure (not a full answer, just the framework). Return as a JSON array of objects with "question" and "answer_structure" fields. Return ONLY valid JSON, no markdown.',
         userPrompt
       ),
     ]);
 
-    const parseJSON = (text: string) => {
-      try {
-        const clean = text.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
-        return JSON.parse(clean);
-      } catch {
-        return null;
-      }
-    };
+    // Parse JSON responses
+    let matchReasons;
+    try {
+      matchReasons = JSON.parse(matchRaw);
+    } catch {
+      matchReasons = { score: 50, positives: [], gaps: [], improvements: [] };
+    }
 
-    const matchData = parseJSON(matchRaw);
-    const interviewQuestions = (() => {
-      const parsed = parseJSON(interviewRaw);
-      if (Array.isArray(parsed)) return parsed;
-      if (parsed?.questions && Array.isArray(parsed.questions)) return parsed.questions;
-      return [];
-    })();
+    let interviewQuestions;
+    try {
+      interviewQuestions = JSON.parse(interviewRaw);
+    } catch {
+      interviewQuestions = [];
+    }
 
-    const jobTitle = matchData?.jobTitle || "Job Position";
-    const companyName = matchData?.companyName || "Company";
-    const matchScore = {
-      score: matchData?.score ?? 50,
-      positives: matchData?.positives || [],
-      gaps: matchData?.gaps || [],
-      gap_fixes: matchData?.gap_fixes || [],
-      improvements: matchData?.improvements || [],
-    };
+    // Extract job title and company from the AI or fallback
+    const titleMatch = jobDescription.match(/(?:title|position|role)[:\s]*([^\n]+)/i);
+    const companyMatch = jobDescription.match(/(?:company|at|@)[:\s]*([^\n]+)/i);
+    const jobTitle = titleMatch?.[1]?.trim() || "Job Position";
+    const companyName = companyMatch?.[1]?.trim() || "Company";
 
+    // Save to database
     const { data: analysis, error: insertError } = await supabase
       .from("analyses")
       .insert({
@@ -149,8 +124,8 @@ Return only the rewritten CV text, no commentary.`,
         company_name: companyName,
         job_description: jobDescription,
         cv_text: cvText,
-        match_score: matchScore.score,
-        match_reasons: matchScore,
+        match_score: matchReasons.score ?? 50,
+        match_reasons: matchReasons,
         rewritten_cv: rewrittenCv,
         cover_letter: coverLetter,
         interview_questions: interviewQuestions,
@@ -160,25 +135,17 @@ Return only the rewritten CV text, no commentary.`,
 
     if (insertError) throw insertError;
 
+    // Increment analyses count
     await supabase
       .from("profiles")
       .update({ analyses_count: (profile?.analyses_count ?? 0) + 1 })
       .eq("id", user.id);
 
-    return new Response(
-      JSON.stringify({
-        id: analysis.id,
-        matchScore,
-        rewrittenCv,
-        coverLetter,
-        interviewQuestions,
-        company: companyName,
-        role: jobTitle,
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify(analysis), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (err) {
-    return new Response(JSON.stringify({ error: (err as Error).message }), {
+    return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

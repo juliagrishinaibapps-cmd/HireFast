@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase";
 
 export default function Analyse() {
   const router = useRouter();
@@ -30,17 +29,9 @@ export default function Analyse() {
     setLoading(true);
     setError("");
     try {
-      const supabase = createClient();
-      if (!supabase) { router.push("/login"); return; }
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { router.push("/login"); return; }
-
       const res = await fetch("/api/analyse", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.access_token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jobDescription: jobText, cvText }),
       });
       if (!res.ok) {

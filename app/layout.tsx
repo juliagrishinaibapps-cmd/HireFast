@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Navbar from "./components/Navbar";
 
 export const metadata: Metadata = {
   title: "HireFast — Land your dream job faster",
@@ -15,10 +14,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="antialiased pt-14">{/* pt-14 for fixed navbar */}
-        <Navbar />
-        {children}
-      </body>
+      <body className="antialiased">{children}</body>
     </html>
   );
 }

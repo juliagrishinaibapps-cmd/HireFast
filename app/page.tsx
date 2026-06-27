@@ -3,12 +3,6 @@ import Link from "next/link";
 export default function Home() {
   return (
     <main className="min-h-screen bg-hero relative overflow-hidden flex flex-col items-center justify-center px-4">
-      <div className="absolute inset-0 opacity-[0.03]" style={{
-        backgroundImage: "url('https://images.unsplash.com/photo-1497366216548-37526070297c?w=1600&q=80')",
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-      }} />
-
       <div className="relative z-10 max-w-2xl w-full text-center">
         <h1 className="text-6xl md:text-7xl font-bold tracking-tight text-white mb-4 animate-fade-in-up">
           Hire<span className="text-gold">Fast</span>

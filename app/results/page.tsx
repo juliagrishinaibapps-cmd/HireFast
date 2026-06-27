@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 
 type Tab = "match" | "cv" | "cover" | "interview";
@@ -9,6 +9,7 @@ interface MatchScore {
   score: number;
   positives: string[];
   gaps: string[];
+  gap_fixes: string[];
   improvements: string[];
 }
 
@@ -32,10 +33,19 @@ export default function Results() {
   const [copied, setCopied] = useState(false);
   const [practiceMode, setPracticeMode] = useState(false);
   const [practiceIdx, setPracticeIdx] = useState(0);
+  const [editedCv, setEditedCv] = useState("");
+  const [editedCover, setEditedCover] = useState("");
+  const [cvHistory, setCvHistory] = useState<string[]>([]);
+  const [coverHistory, setCoverHistory] = useState<string[]>([]);
 
   useEffect(() => {
     const data = sessionStorage.getItem("hirefast_result");
-    if (data) setResult(JSON.parse(data));
+    if (data) {
+      const parsed = JSON.parse(data);
+      setResult(parsed);
+      setEditedCv(parsed.rewrittenCv);
+      setEditedCover(parsed.coverLetter);
+    }
   }, []);
 
   const copy = async (text: string) => {
@@ -44,10 +54,9 @@ export default function Results() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const downloadPdf = (content: string, title: string) => {
+  const downloadHtml = (content: string, title: string) => {
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>
       body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 48px; line-height: 1.6; color: #1a1a1a; max-width: 700px; margin: 0 auto; }
-      h1 { font-size: 22px; border-bottom: 2px solid #d4a853; padding-bottom: 8px; margin-bottom: 16px; }
       h2 { font-size: 16px; text-transform: uppercase; letter-spacing: 1px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-top: 24px; }
       p { margin: 4px 0; } li { margin: 2px 0; }
     </style></head><body>
@@ -72,10 +81,7 @@ export default function Results() {
       <main className="min-h-screen bg-hero flex flex-col items-center justify-center px-4">
         <div className="glass-strong rounded-3xl p-10 text-center">
           <p className="text-gray-400 mb-4">No results found.</p>
-          <Link
-            href="/analyse"
-            className="text-gold hover:text-gold-light transition-colors"
-          >
+          <Link href="/analyse" className="text-gold hover:text-gold-light transition-colors">
             Run a new analysis →
           </Link>
         </div>
@@ -86,10 +92,7 @@ export default function Results() {
   const score = result.matchScore.score;
   const company = result.company ?? "the company";
   const role = result.role ?? "this role";
-
-  const questions = Array.isArray(result.interviewQuestions)
-    ? result.interviewQuestions
-    : [];
+  const questions = Array.isArray(result.interviewQuestions) ? result.interviewQuestions : [];
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "match", label: "Match" },
@@ -101,18 +104,14 @@ export default function Results() {
   return (
     <main className="min-h-screen bg-hero py-12 px-4">
       <div className="max-w-2xl mx-auto relative z-10">
-        <Link
-          href="/analyse"
-          className="text-gold/70 text-sm mb-4 inline-block hover:text-gold transition-colors"
-        >
+        <Link href="/analyse" className="text-gold/70 text-sm mb-4 inline-block hover:text-gold transition-colors">
           ← New analysis
         </Link>
 
         <div className="glass-strong rounded-2xl px-6 py-4 mb-6 animate-fade-in-up">
           <p className="text-sm text-gray-400">Your application for</p>
           <p className="text-lg font-semibold text-white">
-            {role}{" "}
-            <span className="text-gold">at {company}</span>
+            {role} <span className="text-gold">at {company}</span>
           </p>
         </div>
 
@@ -125,10 +124,7 @@ export default function Results() {
                   ? "bg-gold text-navy shadow-lg shadow-gold/20"
                   : "glass text-gray-400 hover:text-white"
               }`}
-              onClick={() => {
-                setTab(t.key);
-                setPracticeMode(false);
-              }}
+              onClick={() => { setTab(t.key); setPracticeMode(false); }}
             >
               {t.label}
             </button>
@@ -139,17 +135,34 @@ export default function Results() {
           {tab === "match" && <MatchTab matchScore={result.matchScore} score={score} />}
           {tab === "cv" && (
             <CVTab
-              cv={result.rewrittenCv}
+              cv={editedCv}
               copied={copied}
-              onCopy={() => copy(result.rewrittenCv)}
-              onDownload={() => downloadPdf(result.rewrittenCv, `CV - ${role}`)}
+              onCopy={() => copy(editedCv)}
+              onDownload={() => downloadHtml(editedCv, `CV - ${role}`)}
+              onRefine={(newCv) => {
+                setCvHistory((h) => [...h, editedCv]);
+                setEditedCv(newCv);
+              }}
+              onUndo={cvHistory.length > 0 ? () => {
+                setEditedCv(cvHistory[cvHistory.length - 1]);
+                setCvHistory((h) => h.slice(0, -1));
+              } : undefined}
             />
           )}
           {tab === "cover" && (
             <CoverTab
-              letter={result.coverLetter}
+              letter={editedCover}
               copied={copied}
-              onCopy={() => copy(result.coverLetter)}
+              onCopy={() => copy(editedCover)}
+              onDownload={() => downloadHtml(editedCover, `Cover Letter - ${role}`)}
+              onRefine={(newCover) => {
+                setCoverHistory((h) => [...h, editedCover]);
+                setEditedCover(newCover);
+              }}
+              onUndo={coverHistory.length > 0 ? () => {
+                setEditedCover(coverHistory[coverHistory.length - 1]);
+                setCoverHistory((h) => h.slice(0, -1));
+              } : undefined}
             />
           )}
           {tab === "interview" && (
@@ -157,15 +170,8 @@ export default function Results() {
               questions={questions}
               practiceMode={practiceMode}
               practiceIdx={practiceIdx}
-              onToggle={() => {
-                setPracticeMode(!practiceMode);
-                setPracticeIdx(0);
-              }}
-              onNext={() =>
-                setPracticeIdx((i) =>
-                  i < questions.length - 1 ? i + 1 : 0
-                )
-              }
+              onToggle={() => { setPracticeMode(!practiceMode); setPracticeIdx(0); }}
+              onNext={() => setPracticeIdx((i) => (i < questions.length - 1 ? i + 1 : 0))}
             />
           )}
         </div>
@@ -174,46 +180,124 @@ export default function Results() {
   );
 }
 
+function RefineChat({
+  currentText,
+  type,
+  onRefine,
+}: {
+  currentText: string;
+  type: "cv" | "cover";
+  onRefine: (text: string) => void;
+}) {
+  const [instruction, setInstruction] = useState("");
+  const [streaming, setStreaming] = useState(false);
+  const [streamText, setStreamText] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const chips = type === "cv"
+    ? ["Make it more senior", "Make it shorter", "Add more metrics", "Stronger action verbs"]
+    : ["Make it more confident", "Make it shorter", "More specific to the role", "Warmer tone"];
+
+  const refine = useCallback(async (msg: string) => {
+    if (!msg.trim() || streaming) return;
+    setStreaming(true);
+    setStreamText("");
+    setInstruction("");
+
+    try {
+      const res = await fetch("/api/refine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentText, instruction: msg, type }),
+      });
+
+      if (!res.ok) {
+        setStreaming(false);
+        return;
+      }
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let full = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        full += chunk;
+        setStreamText(full);
+      }
+
+      onRefine(full);
+    } finally {
+      setStreaming(false);
+      setStreamText("");
+    }
+  }, [currentText, type, streaming, onRefine]);
+
+  return (
+    <div className="mt-4">
+      <div className="flex flex-wrap gap-2 mb-3">
+        {chips.map((chip) => (
+          <button
+            key={chip}
+            disabled={streaming}
+            className="text-xs px-3 py-1.5 rounded-full glass text-gold hover:bg-white/10 transition-all disabled:opacity-40"
+            onClick={() => refine(chip)}
+          >
+            {chip}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          ref={inputRef}
+          className="flex-1 glass rounded-xl px-4 py-2.5 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-gold/50"
+          placeholder={`Tell AI how to refine this ${type === "cv" ? "CV" : "cover letter"}...`}
+          value={instruction}
+          onChange={(e) => setInstruction(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && refine(instruction)}
+          disabled={streaming}
+        />
+        <button
+          className="bg-gold hover:bg-gold-light text-navy text-sm font-semibold px-4 py-2.5 rounded-xl transition-all disabled:opacity-40"
+          onClick={() => refine(instruction)}
+          disabled={streaming || !instruction.trim()}
+        >
+          {streaming ? "Refining..." : "Refine"}
+        </button>
+      </div>
+      {streaming && streamText && (
+        <div className="glass-strong rounded-xl p-4 mt-3 max-h-48 overflow-y-auto">
+          <p className="text-xs text-gold mb-2 font-semibold">Generating...</p>
+          <pre className="whitespace-pre-wrap text-sm text-gray-300 font-sans">{streamText}</pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AnimatedScore({ score }: { score: number }) {
   const [display, setDisplay] = useState(0);
-  const ref = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
-    let start = 0;
     const duration = 1200;
     const startTime = performance.now();
-
     const animate = (now: number) => {
-      const elapsed = now - startTime;
-      const progress = Math.min(elapsed / duration, 1);
+      const progress = Math.min((now - startTime) / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
-      start = Math.round(eased * score);
-      setDisplay(start);
+      setDisplay(Math.round(eased * score));
       if (progress < 1) requestAnimationFrame(animate);
     };
-
     requestAnimationFrame(animate);
   }, [score]);
 
-  const color =
-    score >= 71
-      ? "text-emerald-400"
-      : score >= 41
-        ? "text-amber-400"
-        : "text-red-400";
-
-  const glow =
-    score >= 71
-      ? "shadow-emerald-400/30"
-      : score >= 41
-        ? "shadow-amber-400/30"
-        : "shadow-red-400/30";
+  const color = score >= 71 ? "text-emerald-400" : score >= 41 ? "text-amber-400" : "text-red-400";
+  const glow = score >= 71 ? "shadow-emerald-400/30" : score >= 41 ? "shadow-amber-400/30" : "shadow-red-400/30";
 
   return (
     <div className={`glass-strong rounded-3xl p-10 text-center mb-6 shadow-lg ${glow}`}>
-      <span ref={ref} className={`text-8xl font-bold ${color} animate-count-up inline-block`}>
-        {display}
-      </span>
+      <span className={`text-8xl font-bold ${color} animate-count-up inline-block`}>{display}</span>
       <p className="text-sm text-gray-400 mt-3">Your CV match for this role</p>
     </div>
   );
@@ -232,7 +316,12 @@ function MatchTab({ matchScore, score }: { matchScore: MatchScore; score: number
 
       <Section title="Gaps" icon="✗" color="text-red-400">
         {matchScore.gaps?.map((g, i) => (
-          <BulletCard key={i} icon="✗" color="text-red-400" border="border-red-500/20" text={g} delay={i} />
+          <GapCard
+            key={i}
+            gap={g}
+            fix={matchScore.gap_fixes?.[i]}
+            delay={i}
+          />
         ))}
       </Section>
 
@@ -245,109 +334,115 @@ function MatchTab({ matchScore, score }: { matchScore: MatchScore; score: number
   );
 }
 
+function GapCard({ gap, fix, delay }: { gap: string; fix?: string; delay: number }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      className="glass rounded-xl p-4 mb-2 border border-red-500/20 animate-fade-in-up cursor-pointer"
+      style={{ animationDelay: `${delay * 100}ms`, opacity: 0 }}
+      onClick={() => fix && setOpen(!open)}
+    >
+      <div className="flex gap-3 items-start">
+        <span className="text-red-400 text-lg">✗</span>
+        <div className="flex-1">
+          <p className="text-sm text-gray-300 leading-relaxed">{gap}</p>
+          {fix && (
+            <span className="text-xs text-gold/60 mt-1 inline-block">
+              {open ? "▾ Hide fix" : "▸ How to fix"}
+            </span>
+          )}
+          {open && fix && (
+            <p className="text-sm text-emerald-300/80 mt-2 leading-relaxed pl-2 border-l-2 border-emerald-500/30">
+              {fix}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CVTab({
-  cv,
-  copied,
-  onCopy,
-  onDownload,
+  cv, copied, onCopy, onDownload, onRefine, onUndo,
 }: {
-  cv: string;
-  copied: boolean;
-  onCopy: () => void;
-  onDownload: () => void;
+  cv: string; copied: boolean; onCopy: () => void; onDownload: () => void;
+  onRefine: (text: string) => void; onUndo?: () => void;
 }) {
   const formatCv = (text: string) => {
     return text.split("\n").map((line, i) => {
       if (line.match(/^[A-Z\s]{4,}$/) || line.match(/^(PROFESSIONAL SUMMARY|WORK EXPERIENCE|EDUCATION|SKILLS|CERTIFICATIONS|PROJECTS)/i)) {
-        return (
-          <h3 key={i} className="text-gold font-bold text-sm uppercase tracking-wider mt-5 mb-2 border-b border-gold/20 pb-1">
-            {line}
-          </h3>
-        );
+        return <h3 key={i} className="text-gold font-bold text-sm uppercase tracking-wider mt-5 mb-2 border-b border-gold/20 pb-1">{line}</h3>;
       }
       if (line.match(/\|/) && line.match(/\d{4}/)) {
-        return (
-          <p key={i} className="font-semibold text-white text-sm mt-3 mb-1">
-            {line}
-          </p>
-        );
+        return <p key={i} className="font-semibold text-white text-sm mt-3 mb-1">{line}</p>;
       }
       if (line.startsWith("•") || line.startsWith("-") || line.startsWith("–")) {
-        return (
-          <p key={i} className="text-sm text-gray-300 pl-4 mb-1">
-            {line}
-          </p>
-        );
+        return <p key={i} className="text-sm text-gray-300 pl-4 mb-1">{line}</p>;
       }
       if (line.trim() === "") return <div key={i} className="h-2" />;
-      return (
-        <p key={i} className="text-sm text-gray-300 mb-1">
-          {line}
-        </p>
-      );
+      return <p key={i} className="text-sm text-gray-300 mb-1">{line}</p>;
     });
   };
 
   return (
     <div>
-      <div className="flex gap-2 mb-4">
-        <button
-          className="bg-gold hover:bg-gold-light text-navy text-sm font-semibold px-5 py-2.5 rounded-xl transition-all duration-300"
-          onClick={onCopy}
-        >
+      <div className="flex gap-2 mb-4 flex-wrap">
+        <button className="bg-gold hover:bg-gold-light text-navy text-sm font-semibold px-5 py-2.5 rounded-xl transition-all" onClick={onCopy}>
           {copied ? "Copied ✓" : "Copy to clipboard"}
         </button>
-        <button
-          className="glass text-gold text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-white/10 transition-all duration-300"
-          onClick={onDownload}
-        >
-          Download PDF
+        <button className="glass text-gold text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-white/10 transition-all" onClick={onDownload}>
+          Download
         </button>
+        {onUndo && (
+          <button className="glass text-gray-400 text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-white/10 transition-all" onClick={onUndo}>
+            Undo
+          </button>
+        )}
       </div>
       <div className="glass-strong rounded-2xl p-6 cv-section">{formatCv(cv)}</div>
+      <RefineChat currentText={cv} type="cv" onRefine={onRefine} />
     </div>
   );
 }
 
 function CoverTab({
-  letter,
-  copied,
-  onCopy,
+  letter, copied, onCopy, onDownload, onRefine, onUndo,
 }: {
-  letter: string;
-  copied: boolean;
-  onCopy: () => void;
+  letter: string; copied: boolean; onCopy: () => void; onDownload: () => void;
+  onRefine: (text: string) => void; onUndo?: () => void;
 }) {
   return (
     <div>
-      <button
-        className="bg-gold hover:bg-gold-light text-navy text-sm font-semibold px-5 py-2.5 rounded-xl mb-4 transition-all duration-300"
-        onClick={onCopy}
-      >
-        {copied ? "Copied ✓" : "Copy to clipboard"}
-      </button>
-      <div className="glass-strong rounded-2xl p-6">
-        <pre className="whitespace-pre-wrap text-sm text-gray-200 leading-relaxed font-sans">
-          {letter}
-        </pre>
+      <div className="flex gap-2 mb-4 flex-wrap">
+        <button className="bg-gold hover:bg-gold-light text-navy text-sm font-semibold px-5 py-2.5 rounded-xl transition-all" onClick={onCopy}>
+          {copied ? "Copied ✓" : "Copy to clipboard"}
+        </button>
+        <button className="glass text-gold text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-white/10 transition-all" onClick={onDownload}>
+          Download
+        </button>
+        {onUndo && (
+          <button className="glass text-gray-400 text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-white/10 transition-all" onClick={onUndo}>
+            Undo
+          </button>
+        )}
       </div>
+      <div className="glass-strong rounded-2xl p-6">
+        <pre className="whitespace-pre-wrap text-sm text-gray-200 leading-relaxed font-sans">{letter}</pre>
+      </div>
+      <RefineChat currentText={letter} type="cover" onRefine={onRefine} />
     </div>
   );
 }
 
 function InterviewTab({
-  questions,
-  practiceMode,
-  practiceIdx,
-  onToggle,
-  onNext,
+  questions, practiceMode, practiceIdx, onToggle, onNext,
 }: {
-  questions: InterviewQuestion[];
-  practiceMode: boolean;
-  practiceIdx: number;
-  onToggle: () => void;
-  onNext: () => void;
+  questions: InterviewQuestion[]; practiceMode: boolean; practiceIdx: number;
+  onToggle: () => void; onNext: () => void;
 }) {
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
   if (!questions.length) {
     return (
       <div className="glass-strong rounded-2xl p-8 text-center">
@@ -356,13 +451,20 @@ function InterviewTab({
     );
   }
 
+  const toggle = (i: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  };
+
   return (
     <div>
       <button
-        className={`text-sm font-semibold px-5 py-2.5 rounded-xl mb-5 transition-all duration-300 ${
-          practiceMode
-            ? "glass text-gray-300 hover:bg-white/10"
-            : "bg-gold hover:bg-gold-light text-navy"
+        className={`text-sm font-semibold px-5 py-2.5 rounded-xl mb-5 transition-all ${
+          practiceMode ? "glass text-gray-300 hover:bg-white/10" : "bg-gold hover:bg-gold-light text-navy"
         }`}
         onClick={onToggle}
       >
@@ -371,29 +473,21 @@ function InterviewTab({
 
       {practiceMode ? (
         <div className="animate-fade-in-up">
-          <p className="text-xs text-gray-500 mb-3">
-            Question {practiceIdx + 1} of {questions.length}
-          </p>
+          <p className="text-xs text-gray-500 mb-3">Question {practiceIdx + 1} of {questions.length}</p>
           <div className="glass-strong rounded-2xl p-6 mb-4">
             <div className="flex items-start gap-3 mb-4">
               <span className="bg-gold/20 text-gold rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shrink-0">
                 {practiceIdx + 1}
               </span>
-              <p className="font-semibold text-white text-base leading-relaxed">
-                {questions[practiceIdx]?.question}
-              </p>
+              <p className="font-semibold text-white text-base leading-relaxed">{questions[practiceIdx]?.question}</p>
             </div>
             <div className="bg-navy/40 rounded-xl p-4 ml-11">
-              <p className="text-xs uppercase tracking-wider text-gold/70 mb-2 font-semibold">
-                Suggested answer framework
-              </p>
-              <p className="text-sm text-gray-300 leading-relaxed">
-                {questions[practiceIdx]?.answer_structure}
-              </p>
+              <p className="text-xs uppercase tracking-wider text-gold/70 mb-2 font-semibold">Suggested answer framework</p>
+              <p className="text-sm text-gray-300 leading-relaxed">{questions[practiceIdx]?.answer_structure}</p>
             </div>
           </div>
           <button
-            className="w-full bg-gold hover:bg-gold-light text-navy font-semibold py-3.5 rounded-xl transition-all duration-300 hover:scale-[1.02]"
+            className="w-full bg-gold hover:bg-gold-light text-navy font-semibold py-3.5 rounded-xl transition-all hover:scale-[1.02]"
             onClick={onNext}
           >
             {practiceIdx < questions.length - 1 ? "Next question →" : "Start over ↺"}
@@ -404,22 +498,26 @@ function InterviewTab({
           {questions.map((q, i) => (
             <div
               key={i}
-              className="glass-strong rounded-2xl p-5 animate-fade-in-up"
+              className="glass-strong rounded-2xl p-5 animate-fade-in-up cursor-pointer"
               style={{ animationDelay: `${i * 50}ms`, opacity: 0 }}
+              onClick={() => toggle(i)}
             >
-              <div className="flex items-start gap-3 mb-3">
+              <div className="flex items-start gap-3">
                 <span className="bg-gold/20 text-gold rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shrink-0">
                   {i + 1}
                 </span>
-                <p className="text-sm font-semibold text-white leading-relaxed">
-                  {q.question}
-                </p>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-white leading-relaxed">{q.question}</p>
+                  <span className="text-xs text-gold/50 mt-1 inline-block">
+                    {expanded.has(i) ? "▾ Hide answer" : "▸ Show answer"}
+                  </span>
+                </div>
               </div>
-              <div className="bg-navy/40 rounded-xl p-3 ml-11">
-                <p className="text-xs text-gray-400 leading-relaxed">
-                  💡 {q.answer_structure}
-                </p>
-              </div>
+              {expanded.has(i) && (
+                <div className="bg-navy/40 rounded-xl p-3 ml-11 mt-3">
+                  <p className="text-xs text-gray-400 leading-relaxed">{q.answer_structure}</p>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -428,20 +526,10 @@ function InterviewTab({
   );
 }
 
-function Section({
-  title,
-  icon,
-  color,
-  children,
-}: {
-  title: string;
-  icon: string;
-  color: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, icon, color, children }: { title: string; icon: string; color: string; children: React.ReactNode }) {
   return (
     <div className="mb-5">
-      <h3 className={`font-semibold text-white mb-3 flex items-center gap-2`}>
+      <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
         <span className={color}>{icon}</span> {title}
       </h3>
       {children}
@@ -449,19 +537,7 @@ function Section({
   );
 }
 
-function BulletCard({
-  icon,
-  color,
-  border,
-  text,
-  delay,
-}: {
-  icon: string;
-  color: string;
-  border: string;
-  text: string;
-  delay: number;
-}) {
+function BulletCard({ icon, color, border, text, delay }: { icon: string; color: string; border: string; text: string; delay: number }) {
   return (
     <div
       className={`glass rounded-xl p-4 mb-2 border ${border} animate-fade-in-up`}

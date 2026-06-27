@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-async function callClaude(system: string, userMessage: string): Promise<string> {
+async function callClaude(
+  system: string,
+  userMessage: string
+): Promise<string> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -25,6 +28,43 @@ async function callClaude(system: string, userMessage: string): Promise<string> 
   return data.content[0].text;
 }
 
+function extractCompanyAndRole(jobDescription: string): {
+  company: string;
+  role: string;
+} {
+  const companyPatterns = [
+    /(?:company|organisation|organization|employer)[:\s]+([^\n,]+)/i,
+    /(?:at|@)\s+([A-Z][A-Za-z\s&.]+?)(?:\s*[-–,\n])/,
+    /(?:about|join)\s+([A-Z][A-Za-z\s&.]+?)(?:\s*[-–,.\n])/i,
+    /([A-Z][A-Za-z&.\s]{2,30}?)\s+(?:is\s+(?:looking|hiring|seeking))/,
+  ];
+
+  const rolePatterns = [
+    /(?:title|position|role|job)[:\s]+([^\n]+)/i,
+    /^(?:senior\s+|junior\s+|lead\s+|staff\s+|principal\s+)?[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,4}(?:\s+(?:Engineer|Developer|Manager|Designer|Analyst|Consultant|Specialist|Coordinator|Director|Lead))/m,
+  ];
+
+  let company = "the company";
+  for (const p of companyPatterns) {
+    const m = jobDescription.match(p);
+    if (m?.[1]) {
+      company = m[1].trim().replace(/[.\s]+$/, "");
+      break;
+    }
+  }
+
+  let role = "this role";
+  for (const p of rolePatterns) {
+    const m = jobDescription.match(p);
+    if (m) {
+      role = (m[1] ?? m[0]).trim();
+      break;
+    }
+  }
+
+  return { company, role };
+}
+
 export async function POST(req: NextRequest) {
   try {
     if (!process.env.ANTHROPIC_API_KEY) {
@@ -43,16 +83,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const { company, role } = extractCompanyAndRole(jobDescription);
     const userPrompt = `JOB DESCRIPTION:\n${jobDescription}\n\nCV:\n${cvText}`;
 
     const [matchRaw, rewrittenCv, coverLetter, interviewRaw] =
       await Promise.all([
         callClaude(
-          "You are an expert recruiter and career coach. Analyse the CV against the job listing. Return a JSON object with: score (0-100), positives (array of 3 strengths), gaps (array of 3 weaknesses), improvements (array of 3 specific actions to improve the match). Be brutally honest and specific. Return ONLY valid JSON, no markdown code fences.",
+          "You are an expert recruiter and career coach. Analyse the CV against the job listing. Return a JSON object with these exact fields: score (number 0-100), positives (array of 3 string strengths), gaps (array of 3 string weaknesses), improvements (array of 3 specific action strings). Be brutally honest and specific. Return ONLY the JSON object, no markdown code fences, no extra text.",
           userPrompt
         ),
         callClaude(
-          "You are an expert CV writer. Rewrite the provided CV to be perfectly tailored for this specific job listing. Naturally incorporate keywords from the job listing. Keep it truthful — enhance presentation only, never invent experience. Format it cleanly. Return only the rewritten CV text.",
+          `You are an expert CV writer. Rewrite the provided CV to be perfectly tailored for this specific job listing. Format the CV with clear sections using these exact headers on their own lines:
+
+PROFESSIONAL SUMMARY
+WORK EXPERIENCE
+EDUCATION
+SKILLS
+
+Under WORK EXPERIENCE, format each role as:
+Company Name | Role Title | Start Date – End Date
+• Achievement bullet point
+
+Naturally incorporate keywords from the job listing. Keep it truthful — enhance presentation only, never invent experience. Return only the rewritten CV text, no commentary.`,
           userPrompt
         ),
         callClaude(
@@ -60,7 +112,7 @@ export async function POST(req: NextRequest) {
           userPrompt
         ),
         callClaude(
-          'You are an expert interview coach. Generate the 10 most likely interview questions for this specific role and company. For each question provide: the question itself, and a 2-3 sentence suggested answer structure (not a full answer, just the framework). Return as a JSON array of objects with "question" and "answer_structure" fields. Return ONLY valid JSON, no markdown code fences.',
+          'You are an expert interview coach. Generate the 10 most likely interview questions for this specific role and company. For each question provide: the question itself, and a 2-3 sentence suggested answer structure (not a full answer, just the framework). Return ONLY a JSON array of objects. Each object must have exactly two fields: "question" (string) and "answer_structure" (string). No markdown code fences, no extra text, just the JSON array.',
           userPrompt
         ),
       ]);
@@ -74,7 +126,11 @@ export async function POST(req: NextRequest) {
 
     let interviewQuestions;
     try {
-      interviewQuestions = JSON.parse(interviewRaw);
+      const cleaned = interviewRaw.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
+      interviewQuestions = JSON.parse(cleaned);
+      if (!Array.isArray(interviewQuestions)) {
+        interviewQuestions = [];
+      }
     } catch {
       interviewQuestions = [];
     }
@@ -84,6 +140,8 @@ export async function POST(req: NextRequest) {
       rewrittenCv,
       coverLetter,
       interviewQuestions,
+      company,
+      role,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Analysis failed";

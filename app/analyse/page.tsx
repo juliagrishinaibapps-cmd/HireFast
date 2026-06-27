@@ -4,18 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-interface AnalysisResult {
-  matchScore: {
-    score: number;
-    positives: string[];
-    gaps: string[];
-    improvements: string[];
-  };
-  rewrittenCv: string;
-  coverLetter: string;
-  interviewQuestions: { question: string; answer_structure: string }[];
-}
-
 export default function Analyse() {
   const router = useRouter();
   const [step, setStep] = useState<1 | 2>(1);
@@ -27,37 +15,31 @@ export default function Analyse() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     if (file.type === "text/plain") {
-      const text = await file.text();
-      setCvText(text);
+      setCvText(await file.text());
     } else {
-      setCvText(`[Uploaded: ${file.name}] — For best results, paste your CV text directly.`);
+      setCvText(
+        `[Uploaded: ${file.name}] — For best results, paste your CV text directly.`
+      );
     }
   };
 
   const handleAnalyse = async () => {
     if (!jobText.trim() || !cvText.trim()) return;
-
     setLoading(true);
     setError("");
-
     try {
       const res = await fetch("/api/analyse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jobDescription: jobText, cvText }),
       });
-
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error ?? "Analysis failed");
       }
-
-      const result: AnalysisResult = await res.json();
-
+      const result = await res.json();
       sessionStorage.setItem("hirefast_result", JSON.stringify(result));
-      sessionStorage.setItem("hirefast_job", jobText.slice(0, 100));
       router.push("/results");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -68,21 +50,23 @@ export default function Analyse() {
 
   if (loading) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center px-4">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-6" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">
-            AI is reading your CV and the job listing...
+      <main className="min-h-screen bg-hero flex flex-col items-center justify-center px-4">
+        <div className="glass-strong rounded-3xl p-12 text-center max-w-md">
+          <div className="w-14 h-14 border-4 border-gold border-t-transparent rounded-full animate-spin mx-auto mb-6" />
+          <h2 className="text-xl font-semibold text-white mb-2">
+            AI is analysing your application...
           </h2>
-          <p className="text-gray-500">This usually takes 15–30 seconds</p>
+          <p className="text-gray-400 text-sm">
+            Reading your CV and the job listing. This takes 15–30 seconds.
+          </p>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center py-16 px-4">
-      <div className="max-w-2xl w-full">
+    <main className="min-h-screen bg-hero flex flex-col items-center py-16 px-4">
+      <div className="max-w-2xl w-full relative z-10">
         <Link
           href={step === 2 ? "#" : "/"}
           onClick={
@@ -93,36 +77,36 @@ export default function Analyse() {
                 }
               : undefined
           }
-          className="text-blue-600 text-sm mb-6 inline-block hover:underline"
+          className="text-gold/70 text-sm mb-6 inline-block hover:text-gold transition-colors"
         >
           ← Back
         </Link>
 
-        <h1 className="text-3xl font-bold text-gray-900 mb-1">New analysis</h1>
-        <p className="text-sm text-gray-500 mb-8">Step {step} of 2</p>
+        <h1 className="text-3xl font-bold text-white mb-1">New analysis</h1>
+        <p className="text-sm text-gray-400 mb-8">Step {step} of 2</p>
 
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 mb-6 text-sm">
+          <div className="glass border-red-500/30 text-red-300 rounded-xl p-3 mb-6 text-sm">
             {error}
           </div>
         )}
 
         {step === 1 && (
-          <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-1">
+          <div className="animate-fade-in-up">
+            <label className="block text-sm font-semibold text-white mb-1">
               Job description
             </label>
-            <p className="text-sm text-gray-500 mb-3">
+            <p className="text-sm text-gray-400 mb-3">
               Paste the full job listing or a URL
             </p>
             <textarea
-              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base min-h-[220px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
+              className="w-full glass rounded-xl px-4 py-3 text-base min-h-[220px] text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-gold/50 resize-y"
               placeholder="Paste job description here..."
               value={jobText}
               onChange={(e) => setJobText(e.target.value)}
             />
             <button
-              className="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-white text-lg font-semibold py-4 rounded-xl transition-colors disabled:opacity-50"
+              className="mt-6 w-full bg-gold hover:bg-gold-light text-navy text-lg font-semibold py-4 rounded-xl transition-all duration-300 hover:scale-[1.02]"
               onClick={() => {
                 if (!jobText.trim()) {
                   setError("Please provide a job description.");
@@ -138,17 +122,17 @@ export default function Analyse() {
         )}
 
         {step === 2 && (
-          <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-1">
+          <div className="animate-fade-in-up">
+            <label className="block text-sm font-semibold text-white mb-1">
               Your CV
             </label>
-            <p className="text-sm text-gray-500 mb-3">
+            <p className="text-sm text-gray-400 mb-3">
               Upload a file or paste your CV text
             </p>
 
-            <label className="block border-2 border-dashed border-gray-300 rounded-xl py-8 text-center cursor-pointer hover:border-blue-400 transition-colors mb-4">
+            <label className="block glass border-2 border-dashed border-white/10 hover:border-gold/40 rounded-xl py-8 text-center cursor-pointer transition-colors mb-4">
               <span className="text-2xl block mb-1">📄</span>
-              <span className="text-sm font-medium text-gray-600">
+              <span className="text-sm font-medium text-gray-300">
                 Click to upload PDF or TXT
               </span>
               <input
@@ -160,20 +144,20 @@ export default function Analyse() {
             </label>
 
             <div className="flex items-center gap-3 my-4">
-              <div className="flex-1 h-px bg-gray-200" />
-              <span className="text-sm text-gray-400">or paste text</span>
-              <div className="flex-1 h-px bg-gray-200" />
+              <div className="flex-1 h-px bg-white/10" />
+              <span className="text-sm text-gray-500">or paste text</span>
+              <div className="flex-1 h-px bg-white/10" />
             </div>
 
             <textarea
-              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base min-h-[220px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
+              className="w-full glass rounded-xl px-4 py-3 text-base min-h-[220px] text-gray-100 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-gold/50 resize-y"
               placeholder="Paste your CV text here..."
               value={cvText}
               onChange={(e) => setCvText(e.target.value)}
             />
 
             <button
-              className="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-white text-lg font-semibold py-4 rounded-xl transition-colors disabled:opacity-50"
+              className="mt-6 w-full bg-gold hover:bg-gold-light text-navy text-lg font-semibold py-4 rounded-xl transition-all duration-300 hover:scale-[1.02] disabled:opacity-50"
               disabled={loading}
               onClick={handleAnalyse}
             >

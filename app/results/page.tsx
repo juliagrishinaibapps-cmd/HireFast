@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase";
 
 type Tab = "match" | "cv" | "cover" | "interview";
 
@@ -205,9 +206,15 @@ function RefineChat({
     setInstruction("");
 
     try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+
       const res = await fetch("/api/refine", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token}`,
+        },
         body: JSON.stringify({ currentText, instruction: msg, type }),
       });
 

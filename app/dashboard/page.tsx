@@ -32,6 +32,7 @@ export default function Dashboard() {
   useEffect(() => {
     const load = async () => {
       const supabase = createClient();
+      if (!supabase) { router.push("/login"); return; }
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
 

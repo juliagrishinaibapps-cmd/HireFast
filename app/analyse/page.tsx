@@ -31,6 +31,7 @@ export default function Analyse() {
     setError("");
     try {
       const supabase = createClient();
+      if (!supabase) { router.push("/login"); return; }
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { router.push("/login"); return; }
 

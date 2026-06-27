@@ -18,6 +18,7 @@ export default function Login() {
     setError("");
 
     const supabase = createClient();
+    if (!supabase) { setError("Auth not configured"); setLoading(false); return; }
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
@@ -32,6 +33,7 @@ export default function Login() {
 
   const handleGoogle = async () => {
     const supabase = createClient();
+    if (!supabase) return;
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo: `${window.location.origin}/auth/callback` },

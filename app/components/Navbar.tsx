@@ -12,6 +12,7 @@ export default function Navbar() {
 
   useEffect(() => {
     const supabase = createClient();
+    if (!supabase) return;
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
@@ -21,6 +22,7 @@ export default function Navbar() {
 
   const handleSignOut = async () => {
     const supabase = createClient();
+    if (!supabase) return;
     await supabase.auth.signOut();
     setUser(null);
     router.push("/");

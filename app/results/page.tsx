@@ -207,7 +207,7 @@ function RefineChat({
 
     try {
       const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
+      const session = supabase ? (await supabase.auth.getSession()).data.session : null;
 
       const res = await fetch("/api/refine", {
         method: "POST",

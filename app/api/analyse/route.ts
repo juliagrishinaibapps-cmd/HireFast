@@ -1,19 +1,28 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 
-const anthropic = new Anthropic();
-
 async function callClaude(system: string, userMessage: string): Promise<string> {
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 4096,
-    system,
-    messages: [{ role: "user", content: userMessage }],
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY!,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 4096,
+      system,
+      messages: [{ role: "user", content: userMessage }],
+    }),
   });
 
-  const block = message.content[0];
-  if (block.type === "text") return block.text;
-  return "";
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Claude API error: ${err}`);
+  }
+
+  const data = await res.json();
+  return data.content[0].text;
 }
 
 export async function POST(req: NextRequest) {
